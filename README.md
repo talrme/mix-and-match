@@ -1,5 +1,7 @@
 # Miri’s Mix & Match
 
+**Live:** [https://talrme.github.io/mix-and-match](https://talrme.github.io/mix-and-match)
+
 A browser-based sticker scene builder: drag stickers and backgrounds, doodle on the canvas, add text, undo layers, and share a link that restores your scene.
 
 Live development is plain static HTML/CSS/JS—no build step.
