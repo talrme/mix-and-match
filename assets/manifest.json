@@ -1,0 +1,12 @@
+{
+  "stopAfterMisses": 10,
+  "numberPadding": 3,
+  "sections": [
+    { "id": "people", "label": "People", "kind": "sticker", "folder": "assets/people/" },
+    { "id": "outfits", "label": "Outfits", "kind": "sticker", "folder": "assets/outfits/" },
+    { "id": "extras", "label": "Extras", "kind": "sticker", "folder": "assets/extras/" },
+    { "id": "backgrounds", "label": "Backgrounds", "kind": "background", "folder": "assets/backgrounds/" },
+    { "id": "paint", "label": "Doodle", "kind": "paint", "items": [] },
+    { "id": "text", "label": "Words", "kind": "text", "items": [] }
+  ]
+}

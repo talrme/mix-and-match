@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>Doodle ideas sandbox — Miri's Mix & Match</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: linear-gradient(165deg, #ffd6e8 0%, #fff5d6 45%, #d6f5ff 100%);
+            --panel: rgba(255, 255, 255, 0.94);
+            --border: #ffb8d9;
+            --accent: #ff6b9d;
+            --text: #3d2a44;
+            --muted: #7a5f85;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Fredoka", system-ui, sans-serif;
+            color: var(--text);
+            background: var(--bg);
+        }
+        .layout {
+            display: grid;
+            grid-template-columns: minmax(280px, 340px) 1fr;
+            min-height: 100vh;
+            gap: 0;
+        }
+        @media (max-width: 800px) {
+            .layout { grid-template-columns: 1fr; }
+        }
+        aside {
+            background: var(--panel);
+            border-right: 3px solid var(--border);
+            padding: 16px;
+            overflow-y: auto;
+            max-height: 100vh;
+        }
+        h1 {
+            margin: 0 0 8px;
+            font-size: 1.35rem;
+            font-weight: 600;
+        }
+        .lead {
+            margin: 0 0 14px;
+            font-size: 0.88rem;
+            color: var(--muted);
+            line-height: 1.45;
+        }
+        .tool-btn {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            border: 3px solid var(--border);
+            border-radius: 12px;
+            background: #fff;
+            font-family: inherit;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .tool-btn:hover {
+            border-color: var(--accent);
+            background: #fff8fb;
+        }
+        .tool-btn.active {
+            border-color: var(--accent);
+            background: linear-gradient(180deg, #ffe066 0%, #fff 55%);
+            box-shadow: 0 3px 0 rgba(0, 0, 0, 0.08);
+        }
+        .tool-btn .name {
+            display: block;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+        }
+        .tool-btn .desc {
+            display: block;
+            font-weight: 500;
+            color: var(--muted);
+            font-size: 0.78rem;
+            line-height: 1.35;
+        }
+        .controls {
+            margin-top: 16px;
+            padding-top: 14px;
+            border-top: 2px dashed var(--border);
+        }
+        .controls label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.88rem;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+        .controls input[type="color"] {
+            width: 44px;
+            height: 36px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .btn-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        button.ghost {
+            padding: 8px 14px;
+            border-radius: 10px;
+            border: 3px solid var(--border);
+            background: #fff;
+            font-family: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        button.ghost:hover {
+            border-color: var(--accent);
+        }
+        main {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
+        .canvas-wrap {
+            position: relative;
+            width: 100%;
+            max-width: min(920px, 100%);
+            border-radius: 16px;
+            border: 4px solid var(--border);
+            background: #fffef8;
+            box-shadow: 0 8px 0 rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+            touch-action: none;
+        }
+        .canvas-wrap canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            vertical-align: middle;
+        }
+        .canvas-wrap.scratch-stack {
+            background: #111;
+        }
+        .scratch-layer {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .scratch-layer.base {
+            z-index: 0;
+        }
+        .scratch-layer.top {
+            z-index: 1;
+            pointer-events: none;
+        }
+        .hint-bar {
+            margin-top: 12px;
+            font-size: 0.82rem;
+            color: var(--muted);
+            text-align: center;
+            max-width: 640px;
+        }
+        .back {
+            margin-bottom: 12px;
+        }
+        .back a {
+            color: var(--accent);
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .back a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <aside>
+            <p class="back"><a href="index.html">← Back to app</a></p>
+            <h1>Doodle ideas sandbox</h1>
+            <p class="lead">Try each concept on the canvas. This page is only for picking favorites — nothing here is wired into the main game yet.</p>
+            <div id="tools"></div>
+            <div class="controls">
+                <label><input type="checkbox" id="opt-rainbow"> Rainbow stroke color</label>
+                <label>Color <input type="color" id="opt-color" value="#6c5ce7"></label>
+                <div class="btn-row">
+                    <button type="button" class="ghost" id="btn-clear">Clear canvas</button>
+                </div>
+            </div>
+        </aside>
+        <main>
+            <div class="canvas-wrap" id="canvas-wrap">
+                <canvas id="cv"></canvas>
+            </div>
+            <p class="hint-bar" id="hint"></p>
+        </main>
+    </div>
+    <script src="doodle-sandbox.js"></script>
+</body>
+</html>
