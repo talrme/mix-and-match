@@ -1996,42 +1996,104 @@
         if (el) el.style.opacity = "";
     }
 
+    function tryJoinStickerGesture(e, id) {
+        if (!dragState) return false;
+        const firstPointer = dragState.pointers.values().next().value;
+        const canJoinGesture =
+            appSettings.twoFingerGestures &&
+            e.pointerType === "touch" &&
+            firstPointer &&
+            firstPointer.pointerType === "touch" &&
+            dragState.id === id &&
+            !dragState.pointers.has(e.pointerId) &&
+            dragState.pointers.size === 1;
+        if (!canJoinGesture) return false;
+
+        const el = dragState.el;
+        const it = items.find((x) => x.id === id);
+        if (!el || !it) return false;
+
+        e.preventDefault();
+        try {
+            el.setPointerCapture(e.pointerId);
+        } catch (_) {
+            return false;
+        }
+        dragState.pointers.set(e.pointerId, {
+            x: e.clientX,
+            y: e.clientY,
+            pointerType: e.pointerType
+        });
+        const points = [...dragState.pointers.values()];
+        clearStickerTrashFeedback(dragState, el);
+        dragState.gesture = {
+            startDistance: Math.max(12, pointerDistance(points[0], points[1])),
+            startAngle: pointerAngle(points[0], points[1]),
+            origScale: it.scale,
+            origRotation: it.rotation
+        };
+        dragState.everGestured = true;
+        el.classList.add("gesturing");
+        return true;
+    }
+
+    function startCanvasTouchForSelectedSticker(e) {
+        if (
+            e.pointerType !== "touch" ||
+            !appSettings.twoFingerGestures ||
+            !selectedId ||
+            selectedId === BACKGROUND_LAYER_ID ||
+            selectedId === DOODLES_LAYER_ID
+        ) {
+            return false;
+        }
+        const it = items.find((x) => x.id === selectedId);
+        const el = document.querySelector('.sticker[data-id="' + selectedId + '"]');
+        if (!it || !el) return false;
+
+        e.preventDefault();
+        try {
+            el.setPointerCapture(e.pointerId);
+        } catch (_) {
+            return false;
+        }
+        syncRects();
+        dragState = {
+            id: selectedId,
+            el,
+            primaryPid: e.pointerId,
+            pointers: new Map([
+                [
+                    e.pointerId,
+                    { x: e.clientX, y: e.clientY, pointerType: e.pointerType }
+                ]
+            ]),
+            gesture: null,
+            startX: e.clientX,
+            startY: e.clientY,
+            origNx: it.nx,
+            origNy: it.ny,
+            trashHot: false,
+            trashPreviewEl: null,
+            moved: false,
+            emptyPointerMoved: false,
+            allowSinglePointerDrag: false,
+            everGestured: false,
+            undoCommitted: false
+        };
+        el.addEventListener("pointermove", onStickerPointerMove, POINTER_MOVE_OPTS);
+        el.addEventListener("pointerup", onStickerPointerUp);
+        el.addEventListener("pointercancel", onStickerPointerUp);
+        return true;
+    }
+
     function onStickerPointerDown(e) {
         if (e.button === 2) return;
         const el = e.currentTarget;
         const id = el.dataset.id;
 
         if (dragState) {
-            const firstPointer = dragState.pointers.values().next().value;
-            const canJoinGesture =
-                appSettings.twoFingerGestures &&
-                e.pointerType === "touch" &&
-                firstPointer &&
-                firstPointer.pointerType === "touch" &&
-                dragState.id === id &&
-                !dragState.pointers.has(e.pointerId) &&
-                dragState.pointers.size === 1;
-            if (!canJoinGesture) return;
-
-            e.preventDefault();
-            el.setPointerCapture(e.pointerId);
-            dragState.pointers.set(e.pointerId, {
-                x: e.clientX,
-                y: e.clientY,
-                pointerType: e.pointerType
-            });
-            const points = [...dragState.pointers.values()];
-            const it = items.find((x) => x.id === id);
-            if (!it || points.length < 2) return;
-
-            clearStickerTrashFeedback(dragState, el);
-            dragState.gesture = {
-                startDistance: Math.max(12, pointerDistance(points[0], points[1])),
-                startAngle: pointerAngle(points[0], points[1]),
-                origScale: it.scale,
-                origRotation: it.rotation
-            };
-            el.classList.add("gesturing");
+            tryJoinStickerGesture(e, id);
             return;
         }
 
@@ -2060,6 +2122,9 @@
             trashHot: false,
             trashPreviewEl: null,
             moved: false,
+            emptyPointerMoved: false,
+            allowSinglePointerDrag: true,
+            everGestured: false,
             undoCommitted: false
         };
         el.addEventListener("pointermove", onStickerPointerMove, POINTER_MOVE_OPTS);
@@ -2113,6 +2178,15 @@
                 it.rotation = rotation;
                 dragState.moved = true;
                 applyStickerTransform(dragState.el, it);
+            }
+            return;
+        }
+
+        if (!dragState.allowSinglePointerDrag) {
+            if (
+                Math.hypot(e.clientX - dragState.startX, e.clientY - dragState.startY) > 6
+            ) {
+                dragState.emptyPointerMoved = true;
             }
             return;
         }
@@ -2236,12 +2310,22 @@
         $("trash-zone").classList.remove("hot");
 
         const dropToTrash = e.type !== "pointercancel" && !state.gesture && state.trashHot;
+        const deselectAfterCanvasTap =
+            e.type !== "pointercancel" &&
+            !state.allowSinglePointerDrag &&
+            !state.everGestured &&
+            !state.emptyPointerMoved;
         const droppedId = state.id;
         dragState = null;
         scheduleAutosave();
 
         removeStickerTrashPreviewNode(trashPreview);
         if (el) el.style.opacity = "";
+
+        if (deselectAfterCanvasTap) {
+            deselectAll();
+            return;
+        }
 
         if (dropToTrash && el) {
             const startRect =
@@ -3176,6 +3260,11 @@
 
         $("canvas-stage").addEventListener("pointerdown", (e) => {
             if (e.target.closest(".sticker")) return;
+            if (dragState) {
+                tryJoinStickerGesture(e, dragState.id);
+                return;
+            }
+            if (startCanvasTouchForSelectedSticker(e)) return;
             deselectAll();
         });
 
