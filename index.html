@@ -64,10 +64,15 @@
                     <div class="layer-tools-compact">
                         <button type="button" class="btn btn-layer-tool btn-layer-tool-small" id="layer-rot-left" aria-label="Rotate left">↺</button>
                         <button type="button" class="btn btn-layer-tool btn-layer-tool-small" id="layer-rot-right" aria-label="Rotate right">↻</button>
-                        <button type="button" class="btn btn-layer-tool btn-layer-tool-small" id="layer-delete" aria-label="Delete selected layer" title="Delete layer">🗑️</button>
                     </div>
                 </div>
                 <div class="layers-scroll" id="layers-list"></div>
+                <div class="layer-delete-footer">
+                    <button type="button" class="btn btn-layer-delete" id="layer-delete" aria-label="Delete selected layer" title="Delete layer">
+                        <span aria-hidden="true">🗑️</span>
+                        <span>Delete</span>
+                    </button>
+                </div>
             </aside>
         </div>
     </div>
@@ -79,27 +84,45 @@
                 <button type="button" class="btn btn-close" id="settings-close" aria-label="Close">✕</button>
             </div>
             <div class="modal-body">
-                <label class="field">
-                    <span>Color theme</span>
-                    <select id="setting-theme">
-                        <option value="candy">Candy shop</option>
-                        <option value="ocean">Ocean adventure</option>
-                        <option value="forest">Forest friends</option>
-                        <option value="sunset">Sunset sky</option>
-                    </select>
-                </label>
-                <label class="field checkbox-field">
-                    <input type="checkbox" id="setting-sound">
-                    <span>Fun sounds (beeps)</span>
-                </label>
-                <label class="field checkbox-field">
-                    <input type="checkbox" id="setting-url-paint" checked>
-                    <span>Include doodles when copying link (longer URL)</span>
-                </label>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-primary" id="btn-copy-url">Copy save link</button>
-                    <button type="button" class="btn btn-secondary" id="btn-load-url">Load from URL</button>
-                </div>
+                <section class="settings-section" aria-labelledby="settings-look-title">
+                    <h3 class="settings-section-title" id="settings-look-title">Look &amp; feel</h3>
+                    <label class="field">
+                        <span>Color theme</span>
+                        <select id="setting-theme">
+                            <option value="candy">Candy shop</option>
+                            <option value="ocean">Ocean adventure</option>
+                            <option value="forest">Forest friends</option>
+                            <option value="sunset">Sunset sky</option>
+                        </select>
+                    </label>
+                    <label class="field checkbox-field">
+                        <input type="checkbox" id="setting-sound">
+                        <span>Fun sounds (beeps)</span>
+                    </label>
+                </section>
+
+                <section class="settings-section" aria-labelledby="settings-touch-title">
+                    <h3 class="settings-section-title" id="settings-touch-title">Touch controls</h3>
+                    <label class="field checkbox-field settings-toggle-with-help">
+                        <input type="checkbox" id="setting-two-finger" checked>
+                        <span>
+                            <strong>Two-finger resize &amp; rotate</strong>
+                            <small>Pinch a sticker to resize it and twist your fingers to rotate it.</small>
+                        </span>
+                    </label>
+                </section>
+
+                <section class="settings-section settings-section-last" aria-labelledby="settings-sharing-title">
+                    <h3 class="settings-section-title" id="settings-sharing-title">Save &amp; share</h3>
+                    <label class="field checkbox-field">
+                        <input type="checkbox" id="setting-url-paint" checked>
+                        <span>Include doodles when copying link (longer URL)</span>
+                    </label>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-primary" id="btn-copy-url">Copy save link</button>
+                        <button type="button" class="btn btn-secondary" id="btn-load-url">Load from URL</button>
+                    </div>
+                </section>
                 <p class="hint">Tip: After you make art, tap “Copy save link” and bookmark it or send it to yourself.</p>
                 <p class="hint"><a href="doodle-sandbox.html" target="_blank" rel="noopener">Doodle ideas sandbox</a> — try experimental brushes in a separate page.</p>
             </div>

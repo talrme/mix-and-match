@@ -18,6 +18,16 @@
         "#ee5a6f", "#5f27cd", "#ffffff", "#2d3436"
     ];
 
+    const SETTINGS_STORAGE_KEY = "miris-mix-and-match:settings:v1";
+    const VALID_THEMES = new Set(["candy", "ocean", "forest", "sunset"]);
+    const DEFAULT_APP_SETTINGS = Object.freeze({
+        theme: "candy",
+        sound: false,
+        includeDoodlesInLinks: true,
+        twoFingerGestures: true
+    });
+    let appSettings = loadAppSettings();
+
     const BUILTIN = {
         star: "data:image/svg+xml," + encodeURIComponent(
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill="#ffd93d" stroke="#f39c12" stroke-width="4" d="M50 8l12 28 30 2-23 20 7 30-26-16-26 16 7-30-23-20 30-2z"/></svg>'
@@ -273,12 +283,61 @@
         return document.getElementById(id);
     }
 
+    function loadAppSettings() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}");
+            return {
+                ...DEFAULT_APP_SETTINGS,
+                ...saved,
+                theme: VALID_THEMES.has(saved.theme) ? saved.theme : DEFAULT_APP_SETTINGS.theme,
+                sound: saved.sound === true,
+                includeDoodlesInLinks: saved.includeDoodlesInLinks !== false,
+                twoFingerGestures: saved.twoFingerGestures !== false
+            };
+        } catch (_) {
+            return { ...DEFAULT_APP_SETTINGS };
+        }
+    }
+
+    function saveAppSettings() {
+        try {
+            localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(appSettings));
+        } catch (_) {
+            // Preferences still work for this visit if browser storage is unavailable.
+        }
+    }
+
+    function applyAppSettings() {
+        document.documentElement.setAttribute("data-theme", appSettings.theme);
+        if ($("setting-theme")) $("setting-theme").value = appSettings.theme;
+        if ($("setting-sound")) $("setting-sound").checked = appSettings.sound;
+        if ($("setting-url-paint")) {
+            $("setting-url-paint").checked = appSettings.includeDoodlesInLinks;
+        }
+        if ($("setting-two-finger")) {
+            $("setting-two-finger").checked = appSettings.twoFingerGestures;
+        }
+    }
+
+    function updateAppSetting(key, value) {
+        appSettings = { ...appSettings, [key]: value };
+        saveAppSettings();
+        applyAppSettings();
+    }
+
+    function applySceneTheme(theme) {
+        const nextTheme = VALID_THEMES.has(theme) ? theme : DEFAULT_APP_SETTINGS.theme;
+        appSettings = { ...appSettings, theme: nextTheme };
+        saveAppSettings();
+        applyAppSettings();
+    }
+
     function uid() {
         return "L" + nextId++;
     }
 
     function playBeep(high) {
-        if (!$("setting-sound") || !$("setting-sound").checked) return;
+        if (!appSettings.sound) return;
         try {
             const Ctx = window.AudioContext || window.webkitAudioContext;
             if (!Ctx) return;
@@ -1422,18 +1481,83 @@
         playBeep(false);
     }
 
+    function pointerDistance(a, b) {
+        return Math.hypot(b.x - a.x, b.y - a.y);
+    }
+
+    function pointerAngle(a, b) {
+        return Math.atan2(b.y - a.y, b.x - a.x);
+    }
+
+    function radiansToDegrees(radians) {
+        return (radians * 180) / Math.PI;
+    }
+
+    function clearStickerTrashFeedback(state, el) {
+        state.trashHot = false;
+        $("trash-zone").classList.remove("hot");
+        removeStickerTrashPreviewNode(state.trashPreviewEl);
+        state.trashPreviewEl = null;
+        if (el) el.style.opacity = "";
+    }
+
     function onStickerPointerDown(e) {
         if (e.button === 2) return;
-        const id = e.currentTarget.dataset.id;
+        const el = e.currentTarget;
+        const id = el.dataset.id;
+
+        if (dragState) {
+            const firstPointer = dragState.pointers.values().next().value;
+            const canJoinGesture =
+                appSettings.twoFingerGestures &&
+                e.pointerType === "touch" &&
+                firstPointer &&
+                firstPointer.pointerType === "touch" &&
+                dragState.id === id &&
+                !dragState.pointers.has(e.pointerId) &&
+                dragState.pointers.size === 1;
+            if (!canJoinGesture) return;
+
+            e.preventDefault();
+            el.setPointerCapture(e.pointerId);
+            dragState.pointers.set(e.pointerId, {
+                x: e.clientX,
+                y: e.clientY,
+                pointerType: e.pointerType
+            });
+            const points = [...dragState.pointers.values()];
+            const it = items.find((x) => x.id === id);
+            if (!it || points.length < 2) return;
+
+            clearStickerTrashFeedback(dragState, el);
+            dragState.gesture = {
+                startDistance: Math.max(12, pointerDistance(points[0], points[1])),
+                startAngle: pointerAngle(points[0], points[1]),
+                origScale: it.scale,
+                origRotation: it.rotation
+            };
+            el.classList.add("gesturing");
+            return;
+        }
+
         selectById(id, { skipStickerRender: true });
         const it = items.find((x) => x.id === id);
         if (!it) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        e.currentTarget.classList.add("dragging");
+        e.preventDefault();
+        el.setPointerCapture(e.pointerId);
+        el.classList.add("dragging");
         syncRects();
         dragState = {
             id,
-            pid: e.pointerId,
+            el,
+            primaryPid: e.pointerId,
+            pointers: new Map([
+                [
+                    e.pointerId,
+                    { x: e.clientX, y: e.clientY, pointerType: e.pointerType }
+                ]
+            ]),
+            gesture: null,
             startX: e.clientX,
             startY: e.clientY,
             origNx: it.nx,
@@ -1443,15 +1567,62 @@
             moved: false,
             undoCommitted: false
         };
-        e.currentTarget.addEventListener("pointermove", onStickerPointerMove);
-        e.currentTarget.addEventListener("pointerup", onStickerPointerUp);
-        e.currentTarget.addEventListener("pointercancel", onStickerPointerUp);
+        el.addEventListener("pointermove", onStickerPointerMove, POINTER_MOVE_OPTS);
+        el.addEventListener("pointerup", onStickerPointerUp);
+        el.addEventListener("pointercancel", onStickerPointerUp);
     }
 
     function onStickerPointerMove(e) {
-        if (!dragState || e.pointerId !== dragState.pid) return;
+        if (!dragState || !dragState.pointers.has(e.pointerId)) return;
+        e.preventDefault();
+        dragState.pointers.set(e.pointerId, {
+            x: e.clientX,
+            y: e.clientY,
+            pointerType: e.pointerType
+        });
         const it = items.find((x) => x.id === dragState.id);
         if (!it) return;
+
+        if (dragState.gesture && dragState.pointers.size >= 2) {
+            const points = [...dragState.pointers.values()];
+            const distance = Math.max(12, pointerDistance(points[0], points[1]));
+            const angle = pointerAngle(points[0], points[1]);
+            const scale = Math.min(
+                3.2,
+                Math.max(
+                    0.35,
+                    dragState.gesture.origScale *
+                        (distance / dragState.gesture.startDistance)
+                )
+            );
+            const angleDelta = Math.atan2(
+                Math.sin(angle - dragState.gesture.startAngle),
+                Math.cos(angle - dragState.gesture.startAngle)
+            );
+            const rotation =
+                dragState.gesture.origRotation + radiansToDegrees(angleDelta);
+            const scaleChange = Math.abs(
+                Math.log(Math.max(0.001, scale / dragState.gesture.origScale))
+            );
+            const rotationChange = Math.abs(rotation - dragState.gesture.origRotation);
+
+            if (
+                !dragState.undoCommitted &&
+                (scaleChange > 0.015 || rotationChange > 1)
+            ) {
+                beforeMutation();
+                dragState.undoCommitted = true;
+            }
+            if (dragState.undoCommitted) {
+                it.scale = scale;
+                it.rotation = rotation;
+                dragState.moved = true;
+                applyStickerTransform(dragState.el, it);
+            }
+            return;
+        }
+
+        if (e.pointerId !== dragState.primaryPid) return;
         dragState.moved = true;
         const dragPx = Math.hypot(e.clientX - dragState.startX, e.clientY - dragState.startY);
         if (!dragState.undoCommitted && dragPx > 6) {
@@ -1531,24 +1702,46 @@
     }
 
     function onStickerPointerUp(e) {
-        if (!dragState || e.pointerId !== dragState.pid) return;
-        const trashPreview = dragState.trashPreviewEl;
+        if (!dragState || !dragState.pointers.has(e.pointerId)) return;
+        const state = dragState;
+        const el = state.el || document.querySelector('.sticker[data-id="' + state.id + '"]');
+        if (el && el.hasPointerCapture(e.pointerId)) {
+            el.releasePointerCapture(e.pointerId);
+        }
+        state.pointers.delete(e.pointerId);
+
+        if (state.gesture && state.pointers.size === 1) {
+            const [remainingPid, point] = state.pointers.entries().next().value;
+            const it = items.find((x) => x.id === state.id);
+            state.gesture = null;
+            state.primaryPid = remainingPid;
+            state.startX = point.x;
+            state.startY = point.y;
+            state.origNx = it ? it.nx : state.origNx;
+            state.origNy = it ? it.ny : state.origNy;
+            state.moved = false;
+            clearStickerTrashFeedback(state, el);
+            if (el) el.classList.remove("gesturing");
+            return;
+        }
+
+        if (state.pointers.size > 0) return;
+
+        const trashPreview = state.trashPreviewEl;
         let trashPreviewRect = null;
         if (trashPreview) {
             trashPreviewRect = trashPreview.getBoundingClientRect();
         }
-        const el = document.querySelector('.sticker[data-id="' + dragState.id + '"]');
         if (el) {
-            el.releasePointerCapture(e.pointerId);
-            el.classList.remove("dragging");
-            el.removeEventListener("pointermove", onStickerPointerMove);
+            el.classList.remove("dragging", "gesturing");
+            el.removeEventListener("pointermove", onStickerPointerMove, POINTER_MOVE_OPTS);
             el.removeEventListener("pointerup", onStickerPointerUp);
             el.removeEventListener("pointercancel", onStickerPointerUp);
         }
         $("trash-zone").classList.remove("hot");
 
-        const dropToTrash = dragState.trashHot;
-        const droppedId = dragState.id;
+        const dropToTrash = e.type !== "pointercancel" && !state.gesture && state.trashHot;
+        const droppedId = state.id;
         dragState = null;
 
         removeStickerTrashPreviewNode(trashPreview);
@@ -2312,8 +2505,7 @@
 
     function applyFromSerialized(obj) {
         if (!obj || obj.v !== 1) return false;
-        document.documentElement.setAttribute("data-theme", obj.theme || "candy");
-        $("setting-theme").value = obj.theme || "candy";
+        applySceneTheme(obj.theme || DEFAULT_APP_SETTINGS.theme);
         backgroundSrc = obj.bg || null;
         applyBackground();
         antsPaths = antsFromSerialized(obj.ants);
@@ -2421,7 +2613,7 @@
     }
 
     function copyUrl() {
-        const inc = $("setting-url-paint").checked;
+        const inc = appSettings.includeDoodlesInLinks;
         const payload = serializeForUrl(inc);
         const base =
             location.origin && location.origin !== "null"
@@ -2456,6 +2648,7 @@
 
     async function init() {
         els.stage = $("canvas-stage");
+        applyAppSettings();
         await loadManifest();
         buildItemsPanel();
         bindTextStickerModal();
@@ -2518,7 +2711,16 @@
         });
 
         $("setting-theme").addEventListener("change", (e) => {
-            document.documentElement.setAttribute("data-theme", e.target.value);
+            updateAppSetting("theme", e.target.value);
+        });
+        $("setting-sound").addEventListener("change", (e) => {
+            updateAppSetting("sound", e.target.checked);
+        });
+        $("setting-url-paint").addEventListener("change", (e) => {
+            updateAppSetting("includeDoodlesInLinks", e.target.checked);
+        });
+        $("setting-two-finger").addEventListener("change", (e) => {
+            updateAppSetting("twoFingerGestures", e.target.checked);
         });
 
         $("btn-copy-url").addEventListener("click", copyUrl);

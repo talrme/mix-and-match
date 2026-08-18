@@ -2,7 +2,9 @@
 
 **Live:** [https://talrme.github.io/mix-and-match](https://talrme.github.io/mix-and-match)
 
-A browser-based sticker scene builder: drag stickers and backgrounds, doodle on the canvas, add text, undo layers, and share a link that restores your scene.
+A browser-based sticker scene builder: drag stickers and backgrounds, doodle on the canvas, add text, undo layers, and share a link that restores your scene. On touch screens, use two fingers on a sticker or text layer to pinch-resize and twist-rotate it; the gesture can be turned off in Settings.
+
+Settings preferences—including the color theme and two-finger controls—are remembered on the device.
 
 Live development is plain static HTML/CSS/JS—no build step.
 

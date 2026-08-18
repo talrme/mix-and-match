@@ -1015,24 +1015,24 @@ html, body {
 }
 
 .layer-tools {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    gap: 6px;
     padding: 0 10px 10px;
     flex-shrink: 0;
 }
 
 .layer-tools-grow {
-    display: flex;
-    gap: 10px;
-    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
     min-width: 0;
 }
 
 .layer-tools-grow .btn-layer-tool-large {
-    flex: 1;
-    min-width: calc(var(--touch) + 6px);
+    width: 100%;
+    min-width: 0;
     min-height: calc(var(--touch) + 10px);
     font-size: 1.65rem;
     font-weight: 700;
@@ -1040,15 +1040,16 @@ html, body {
 
 .layer-tools-compact {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    flex-wrap: nowrap;
+    gap: 4px;
     align-items: center;
 }
 
 .btn-layer-tool-small {
-    min-width: 40px;
+    width: 34px;
+    min-width: 34px;
     min-height: 40px;
-    padding: 6px 8px;
+    padding: 5px;
     font-size: 1rem;
     border-width: 2px;
     box-shadow: 0 3px 0 rgba(0, 0, 0, 0.1);
@@ -1056,6 +1057,24 @@ html, body {
 
 .btn-layer-tool-large {
     border-width: 3px;
+}
+
+.layer-delete-footer {
+    padding: 8px 10px 10px;
+    border-top: 2px solid var(--panel-border);
+    flex-shrink: 0;
+}
+
+.btn-layer-delete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    min-height: 42px;
+    padding: 7px 10px;
+    border-width: 2px;
+    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.1);
 }
 
 .layer-row {
@@ -1248,6 +1267,24 @@ html, body {
     padding: 18px;
 }
 
+.settings-section {
+    margin: 0 -2px 18px;
+    padding: 0 2px 18px;
+    border-bottom: 2px solid var(--panel-border);
+}
+
+.settings-section-last {
+    margin-bottom: 0;
+    padding-bottom: 4px;
+    border-bottom: 0;
+}
+
+.settings-section-title {
+    margin: 0 0 13px;
+    color: var(--accent-2);
+    font-size: 1rem;
+}
+
 .field {
     display: flex;
     flex-direction: column;
@@ -1273,6 +1310,24 @@ html, body {
 .checkbox-field input {
     width: 22px;
     height: 22px;
+    flex: 0 0 auto;
+}
+
+.settings-toggle-with-help {
+    align-items: flex-start;
+}
+
+.settings-toggle-with-help > span {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.settings-toggle-with-help small {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 500;
+    line-height: 1.35;
 }
 
 .modal-actions {
