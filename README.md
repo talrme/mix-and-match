@@ -6,6 +6,8 @@ A browser-based sticker scene builder: drag stickers and backgrounds, doodle on 
 
 Settings preferences—including the color theme and two-finger controls—are remembered on the device.
 
+The current picture is automatically saved in device-local browser storage and restored on the next visit. Named pictures can also be saved, reopened, and deleted from **Settings → My Pictures**. These saves stay in that browser on that device.
+
 Live development is plain static HTML/CSS/JS—no build step.
 
 ## Run locally

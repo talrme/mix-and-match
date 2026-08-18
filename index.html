@@ -121,6 +121,19 @@
                     </label>
                 </section>
 
+                <section class="settings-section" aria-labelledby="settings-pictures-title">
+                    <h3 class="settings-section-title" id="settings-pictures-title">My Pictures</h3>
+                    <p class="settings-copy">Your current picture is saved automatically on this device.</p>
+                    <div class="project-save-row">
+                        <input type="text" id="project-name" maxlength="40" placeholder="Picture name" aria-label="Picture name">
+                        <button type="button" class="btn btn-primary btn-save-project" id="btn-save-project">Save picture</button>
+                    </div>
+                    <p class="project-status" id="project-status" role="status" aria-live="polite"></p>
+                    <div class="project-gallery" id="project-gallery" aria-label="Saved pictures">
+                        <p class="project-gallery-empty">Named pictures you save will appear here.</p>
+                    </div>
+                </section>
+
                 <section class="settings-section settings-section-last" aria-labelledby="settings-sharing-title">
                     <h3 class="settings-section-title" id="settings-sharing-title">Save &amp; share</h3>
                     <label class="field checkbox-field">

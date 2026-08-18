@@ -19,6 +19,11 @@
     ];
 
     const SETTINGS_STORAGE_KEY = "miris-mix-and-match:settings:v1";
+    const PROJECT_DB_NAME = "miris-mix-and-match-projects";
+    const PROJECT_DB_VERSION = 1;
+    const PROJECT_STORE_NAME = "projects";
+    const AUTOSAVE_PROJECT_ID = "__autosave__";
+    const AUTOSAVE_DELAY_MS = 700;
     const VALID_THEMES = new Set(["candy", "ocean", "forest", "sunset"]);
     const DEFAULT_APP_SETTINGS = Object.freeze({
         theme: "candy",
@@ -27,6 +32,9 @@
         twoFingerGestures: true
     });
     let appSettings = loadAppSettings();
+    let projectDbPromise = null;
+    let autosaveTimer = null;
+    let autosaveEnabled = false;
 
     const BUILTIN = {
         star: "data:image/svg+xml," + encodeURIComponent(
@@ -323,6 +331,7 @@
         appSettings = { ...appSettings, [key]: value };
         saveAppSettings();
         applyAppSettings();
+        if (key === "theme") scheduleAutosave();
     }
 
     function applySceneTheme(theme) {
@@ -330,6 +339,428 @@
         appSettings = { ...appSettings, theme: nextTheme };
         saveAppSettings();
         applyAppSettings();
+    }
+
+    function openProjectDb() {
+        if (projectDbPromise) return projectDbPromise;
+        projectDbPromise = new Promise((resolve, reject) => {
+            if (!window.indexedDB) {
+                reject(new Error("Local project storage is unavailable."));
+                return;
+            }
+            const request = indexedDB.open(PROJECT_DB_NAME, PROJECT_DB_VERSION);
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(PROJECT_STORE_NAME)) {
+                    db.createObjectStore(PROJECT_STORE_NAME, { keyPath: "id" });
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error || new Error("Could not open local storage."));
+            request.onblocked = () => reject(new Error("Local storage is busy in another tab."));
+        });
+        projectDbPromise.catch(() => {
+            projectDbPromise = null;
+        });
+        return projectDbPromise;
+    }
+
+    async function putLocalProject(project) {
+        const db = await openProjectDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(PROJECT_STORE_NAME, "readwrite");
+            tx.objectStore(PROJECT_STORE_NAME).put(project);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error || new Error("Could not save the picture."));
+            tx.onabort = () => reject(tx.error || new Error("Picture saving was interrupted."));
+        });
+    }
+
+    async function getLocalProject(id) {
+        const db = await openProjectDb();
+        return new Promise((resolve, reject) => {
+            const request = db.transaction(PROJECT_STORE_NAME, "readonly")
+                .objectStore(PROJECT_STORE_NAME)
+                .get(id);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = () => reject(request.error || new Error("Could not open the picture."));
+        });
+    }
+
+    async function listNamedProjects() {
+        const db = await openProjectDb();
+        return new Promise((resolve, reject) => {
+            const request = db.transaction(PROJECT_STORE_NAME, "readonly")
+                .objectStore(PROJECT_STORE_NAME)
+                .getAll();
+            request.onsuccess = () => {
+                const projects = (request.result || [])
+                    .filter((project) => project.id !== AUTOSAVE_PROJECT_ID)
+                    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+                resolve(projects);
+            };
+            request.onerror = () => reject(request.error || new Error("Could not list saved pictures."));
+        });
+    }
+
+    async function deleteLocalProject(id) {
+        const db = await openProjectDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(PROJECT_STORE_NAME, "readwrite");
+            tx.objectStore(PROJECT_STORE_NAME).delete(id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error || new Error("Could not delete the picture."));
+            tx.onabort = () => reject(tx.error || new Error("Picture deletion was interrupted."));
+        });
+    }
+
+    function scheduleAutosave(delayMs) {
+        if (!autosaveEnabled) return;
+        if (autosaveTimer != null) window.clearTimeout(autosaveTimer);
+        autosaveTimer = window.setTimeout(() => {
+            autosaveTimer = null;
+            saveAutosave().catch(() => {});
+        }, delayMs == null ? AUTOSAVE_DELAY_MS : delayMs);
+    }
+
+    async function saveAutosave() {
+        if (!autosaveEnabled) return;
+        const scene = serializeForUrl(true);
+        await putLocalProject({
+            id: AUTOSAVE_PROJECT_ID,
+            name: "Current picture",
+            updatedAt: Date.now(),
+            scene
+        });
+    }
+
+    async function flushAutosave() {
+        if (autosaveTimer != null) {
+            window.clearTimeout(autosaveTimer);
+            autosaveTimer = null;
+        }
+        await saveAutosave();
+    }
+
+    async function restoreAutosave() {
+        try {
+            const saved = await getLocalProject(AUTOSAVE_PROJECT_ID);
+            return !!(saved && saved.scene && applyFromSerialized(saved.scene));
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function projectIdForName(name) {
+        const normalized = name.normalize("NFKC").trim().toLocaleLowerCase();
+        let hash = 2166136261;
+        for (let i = 0; i < normalized.length; i++) {
+            hash ^= normalized.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        return "saved:" + (hash >>> 0).toString(36);
+    }
+
+    function setProjectStatus(message, isError) {
+        const status = $("project-status");
+        if (!status) return;
+        status.textContent = message || "";
+        status.classList.toggle("is-error", !!isError);
+    }
+
+    function loadThumbnailImage(src) {
+        return new Promise((resolve) => {
+            if (!src) {
+                resolve(null);
+                return;
+            }
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = () => resolve(null);
+            image.src = src;
+        });
+    }
+
+    function drawImageCover(ctx, image, width, height) {
+        const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+        const drawWidth = image.naturalWidth * scale;
+        const drawHeight = image.naturalHeight * scale;
+        ctx.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+    }
+
+    function drawThumbnailText(ctx, item, width, height) {
+        const scale = Number.isFinite(Number(item.scale)) ? Number(item.scale) : 1;
+        const boxWidth = Math.max(44, (item.baseW || 0.44) * width * scale);
+        const fontSize = Math.max(10, Math.min(26, width * 0.065 * scale));
+        const lines = String(item.text || "Text").split(/\n/).slice(0, 3);
+        const lineHeight = fontSize * 1.12;
+        const boxHeight = Math.max(lineHeight + 10, lines.length * lineHeight + 10);
+
+        ctx.save();
+        ctx.translate(
+            (item.nx != null ? item.nx : 0.5) * width,
+            (item.ny != null ? item.ny : 0.5) * height
+        );
+        ctx.rotate(((item.rotation || 0) * Math.PI) / 180);
+        if (!item.textBorderless) {
+            ctx.fillStyle = "rgba(255,255,255,0.86)";
+            ctx.fillRect(-boxWidth / 2, -boxHeight / 2, boxWidth, boxHeight);
+        }
+        ctx.fillStyle = item.textRainbow ? "#7c5cff" : item.textColor || "#2d3436";
+        ctx.font = "700 " + fontSize + "px Fredoka, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        lines.forEach((line, index) => {
+            const y = (index - (lines.length - 1) / 2) * lineHeight;
+            ctx.fillText(line.slice(0, 34), 0, y, boxWidth - 8);
+        });
+        ctx.restore();
+    }
+
+    function drawThumbnailSticker(ctx, item, image, width, height) {
+        if (item.kind === "text") {
+            drawThumbnailText(ctx, item, width, height);
+            return;
+        }
+        if (!image) return;
+        const scale = Number.isFinite(Number(item.scale)) ? Number(item.scale) : 1;
+        const drawWidth = Math.max(12, (item.baseW || 0.22) * width * scale);
+        const ratio = image.naturalHeight / Math.max(1, image.naturalWidth);
+        const drawHeight = drawWidth * ratio;
+        ctx.save();
+        ctx.translate(
+            (item.nx != null ? item.nx : 0.5) * width,
+            (item.ny != null ? item.ny : 0.5) * height
+        );
+        ctx.rotate(((item.rotation || 0) * Math.PI) / 180);
+        ctx.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+        ctx.restore();
+    }
+
+    function drawThumbnailAnts(ctx, ants, width, height) {
+        if (!Array.isArray(ants)) return;
+        ctx.save();
+        ctx.lineCap = "round";
+        ants.forEach((path) => {
+            const points = Array.isArray(path.points) ? path.points : [];
+            if (points.length < 2) return;
+            ctx.beginPath();
+            points.forEach((point, index) => {
+                const x = point.nx * width;
+                const y = point.ny * height;
+                if (index === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.strokeStyle = path.rainbow ? "#7c5cff" : path.color || "#2d3436";
+            ctx.lineWidth = Math.max(1, (path.lineWidth || 3) * (width / 1024));
+            ctx.setLineDash([3, 3]);
+            ctx.stroke();
+        });
+        ctx.restore();
+    }
+
+    async function createProjectThumbnail(scene) {
+        const width = 320;
+        const height = 240;
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = getComputedStyle(document.documentElement)
+            .getPropertyValue("--canvas-bg")
+            .trim() || "#fffef8";
+        ctx.fillRect(0, 0, width, height);
+
+        const sceneItems = Array.isArray(scene.items) ? scene.items : [];
+        const sources = [...new Set([scene.bg, ...sceneItems.map((item) => item.src)].filter(Boolean))];
+        const loaded = await Promise.all(sources.map(async (src) => [src, await loadThumbnailImage(src)]));
+        const images = new Map(loaded);
+        const background = images.get(scene.bg);
+        if (background) drawImageCover(ctx, background, width, height);
+
+        const sorted = sceneItems.slice().sort((a, b) => (a.z || 0) - (b.z || 0));
+        const rank = Math.max(0, Math.min(sorted.length, scene.paintLayerRank || 0));
+        sorted.slice(0, rank).forEach((item) => {
+            drawThumbnailSticker(ctx, item, images.get(item.src), width, height);
+        });
+
+        if (scene.paint) {
+            const paint = await loadThumbnailImage(scene.paint);
+            if (paint) ctx.drawImage(paint, 0, 0, width, height);
+        }
+        drawThumbnailAnts(ctx, scene.ants, width, height);
+
+        sorted.slice(rank).forEach((item) => {
+            drawThumbnailSticker(ctx, item, images.get(item.src), width, height);
+        });
+        return canvas.toDataURL("image/jpeg", 0.8);
+    }
+
+    function formatProjectDate(timestamp) {
+        try {
+            return new Intl.DateTimeFormat([], {
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit"
+            }).format(new Date(timestamp));
+        } catch (_) {
+            return "Saved picture";
+        }
+    }
+
+    async function refreshProjectGallery() {
+        const gallery = $("project-gallery");
+        if (!gallery) return;
+        try {
+            const projects = await listNamedProjects();
+            gallery.innerHTML = "";
+            if (!projects.length) {
+                const empty = document.createElement("p");
+                empty.className = "project-gallery-empty";
+                empty.textContent = "Named pictures you save will appear here.";
+                gallery.appendChild(empty);
+                return;
+            }
+
+            projects.forEach((project) => {
+                const card = document.createElement("article");
+                card.className = "project-card";
+
+                const thumb = document.createElement("img");
+                thumb.className = "project-card-thumb";
+                thumb.src = project.thumbnail || "assets/icons/app-icon-192.png";
+                thumb.alt = "Preview of " + project.name;
+                card.appendChild(thumb);
+
+                const body = document.createElement("div");
+                body.className = "project-card-body";
+
+                const name = document.createElement("h4");
+                name.className = "project-card-name";
+                name.textContent = project.name;
+                body.appendChild(name);
+
+                const date = document.createElement("p");
+                date.className = "project-card-date";
+                date.textContent = formatProjectDate(project.updatedAt);
+                body.appendChild(date);
+
+                const actions = document.createElement("div");
+                actions.className = "project-card-actions";
+
+                const open = document.createElement("button");
+                open.type = "button";
+                open.className = "btn btn-project-action";
+                open.dataset.projectAction = "open";
+                open.dataset.projectId = project.id;
+                open.textContent = "Open";
+                actions.appendChild(open);
+
+                const remove = document.createElement("button");
+                remove.type = "button";
+                remove.className = "btn btn-project-action btn-project-delete";
+                remove.dataset.projectAction = "delete";
+                remove.dataset.projectId = project.id;
+                remove.dataset.projectName = project.name;
+                remove.setAttribute("aria-label", "Delete " + project.name);
+                remove.title = "Delete picture";
+                remove.textContent = "🗑️";
+                actions.appendChild(remove);
+
+                body.appendChild(actions);
+                card.appendChild(body);
+                gallery.appendChild(card);
+            });
+        } catch (_) {
+            gallery.innerHTML = "";
+            const unavailable = document.createElement("p");
+            unavailable.className = "project-gallery-empty";
+            unavailable.textContent = "Local picture storage is unavailable in this browser.";
+            gallery.appendChild(unavailable);
+        }
+    }
+
+    async function saveNamedProject() {
+        const button = $("btn-save-project");
+        const input = $("project-name");
+        if (!button || !input || button.disabled) return;
+        button.disabled = true;
+        setProjectStatus("Saving…");
+        if (navigator.storage && navigator.storage.persist) {
+            navigator.storage.persist().catch(() => {});
+        }
+        try {
+            const projects = await listNamedProjects();
+            const name = input.value.trim() || "Picture " + (projects.length + 1);
+            input.value = name;
+            const scene = serializeForUrl(true);
+            const thumbnail = await createProjectThumbnail(scene);
+            await putLocalProject({
+                id: projectIdForName(name),
+                name,
+                updatedAt: Date.now(),
+                scene,
+                thumbnail
+            });
+            await refreshProjectGallery();
+            setProjectStatus('Saved “' + name + '” on this device.');
+            scheduleAutosave(0);
+            playBeep(true);
+        } catch (_) {
+            setProjectStatus("This picture could not be saved on this device.", true);
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    async function handleProjectGalleryClick(event) {
+        const button = event.target.closest("[data-project-action]");
+        if (!button) return;
+        const id = button.dataset.projectId;
+        if (!id) return;
+
+        if (button.dataset.projectAction === "open") {
+            button.disabled = true;
+            try {
+                await flushAutosave();
+                const project = await getLocalProject(id);
+                if (!project || !project.scene || !applyFromSerialized(project.scene)) {
+                    throw new Error("Invalid project");
+                }
+                $("project-name").value = project.name;
+                $("settings-modal").classList.add("hidden");
+                setProjectStatus('Opened “' + project.name + '”.');
+                playBeep(true);
+            } catch (_) {
+                setProjectStatus("That picture could not be opened.", true);
+            } finally {
+                button.disabled = false;
+            }
+            return;
+        }
+
+        if (button.dataset.projectAction === "delete") {
+            const name = button.dataset.projectName || "this picture";
+            if (!confirm('Delete “' + name + '” from this device?')) return;
+            button.disabled = true;
+            try {
+                await deleteLocalProject(id);
+                await refreshProjectGallery();
+                setProjectStatus('Deleted “' + name + '”.');
+            } catch (_) {
+                setProjectStatus("That picture could not be deleted.", true);
+                button.disabled = false;
+            }
+        }
+    }
+
+    function bindLocalProjects() {
+        $("btn-save-project").addEventListener("click", saveNamedProject);
+        $("project-name").addEventListener("keydown", (event) => {
+            if (event.key === "Enter") saveNamedProject();
+        });
+        $("project-gallery").addEventListener("click", handleProjectGalleryClick);
     }
 
     function uid() {
@@ -805,6 +1236,7 @@
         if (past.length > MAX_HISTORY) past.shift();
         future.length = 0;
         updateUndoRedo();
+        scheduleAutosave();
     }
 
     function undo() {
@@ -814,6 +1246,7 @@
         applyState(prev);
         playBeep(false);
         updateUndoRedo();
+        scheduleAutosave();
     }
 
     function redo() {
@@ -823,6 +1256,7 @@
         applyState(next);
         playBeep(true);
         updateUndoRedo();
+        scheduleAutosave();
     }
 
     function updateUndoRedo() {
@@ -1384,10 +1818,12 @@
         setPaintToolActive(false);
         painting = false;
         lastPaint = null;
+        if ($("project-name")) $("project-name").value = "";
         renderStickers();
         renderLayers();
         syncRects();
         playBeep(false);
+        scheduleAutosave();
     }
 
     function runExplosiveClear() {
@@ -1743,6 +2179,7 @@
         const dropToTrash = e.type !== "pointercancel" && !state.gesture && state.trashHot;
         const droppedId = state.id;
         dragState = null;
+        scheduleAutosave();
 
         removeStickerTrashPreviewNode(trashPreview);
         if (el) el.style.opacity = "";
@@ -2452,6 +2889,7 @@
                 }
                 renderStickers();
                 renderLayers();
+                scheduleAutosave();
             }
         };
         c.addEventListener("pointerdown", onDown);
@@ -2505,6 +2943,7 @@
 
     function applyFromSerialized(obj) {
         if (!obj || obj.v !== 1) return false;
+        if ($("project-name")) $("project-name").value = "";
         applySceneTheme(obj.theme || DEFAULT_APP_SETTINGS.theme);
         backgroundSrc = obj.bg || null;
         applyBackground();
@@ -2566,6 +3005,7 @@
                 ensureAntsAnimationLoop();
                 renderStickers();
                 renderLayers();
+                scheduleAutosave();
             };
             im.onerror = () => {
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -2576,6 +3016,7 @@
                 ensureAntsAnimationLoop();
                 renderStickers();
                 renderLayers();
+                scheduleAutosave();
             };
             im.src = obj.paint;
         } else {
@@ -2585,6 +3026,7 @@
             recomputePaintHasContent();
             redrawAntsOverlay();
             ensureAntsAnimationLoop();
+            scheduleAutosave();
         }
         renderStickers();
         renderLayers();
@@ -2652,6 +3094,7 @@
         await loadManifest();
         buildItemsPanel();
         bindTextStickerModal();
+        bindLocalProjects();
 
         past.length = 0;
         future.length = 0;
@@ -2702,6 +3145,8 @@
 
         $("btn-settings").addEventListener("click", () => {
             $("settings-modal").classList.remove("hidden");
+            setProjectStatus("");
+            refreshProjectGallery();
         });
         $("settings-close").addEventListener("click", () => {
             $("settings-modal").classList.add("hidden");
@@ -2730,11 +3175,24 @@
         if (explodeBtn) explodeBtn.addEventListener("click", () => runExplosiveClear());
 
         const fromHash = decodeHash();
-        if (fromHash) applyFromSerialized(fromHash);
+        if (fromHash) {
+            applyFromSerialized(fromHash);
+        } else {
+            await restoreAutosave();
+        }
 
         syncRects();
         renderStickers();
         renderLayers();
+        autosaveEnabled = true;
+        scheduleAutosave(1200);
+
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "hidden") flushAutosave().catch(() => {});
+        });
+        window.addEventListener("pagehide", () => {
+            flushAutosave().catch(() => {});
+        });
     }
 
     init();
