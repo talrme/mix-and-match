@@ -904,6 +904,65 @@
         }
     }
 
+    function setLoadingMessage(message) {
+        const el = $("loading-message");
+        if (el) el.textContent = message;
+    }
+
+    function preloadOneImage(src) {
+        return new Promise((resolve) => {
+            if (!src || src.startsWith("data:")) {
+                resolve();
+                return;
+            }
+            const image = new Image();
+            image.onload = image.onerror = () => resolve();
+            image.src = src;
+        });
+    }
+
+    async function preloadManifestImages() {
+        const sources = Array.from(
+            new Set(
+                manifest.sections.flatMap((section) =>
+                    (section.items || []).map(resolveItemSrc).filter(Boolean)
+                )
+            )
+        );
+        if (!sources.length) return;
+
+        let nextIndex = 0;
+        let finished = 0;
+        setLoadingMessage("Trying on " + sources.length + " ridiculous things…");
+
+        async function worker() {
+            while (nextIndex < sources.length) {
+                const src = sources[nextIndex++];
+                await preloadOneImage(src);
+                finished++;
+                if (finished === sources.length || finished % 8 === 0) {
+                    setLoadingMessage("Stuffing the closet… " + finished + "/" + sources.length);
+                }
+            }
+        }
+
+        const workerCount = Math.min(8, sources.length);
+        await Promise.all(Array.from({ length: workerCount }, worker));
+    }
+
+    async function finishLoadingOverlay(startedAt) {
+        const overlay = $("loading-overlay");
+        if (!overlay) return;
+        const minimumShowTime = 650;
+        const wait = Math.max(0, minimumShowTime - (performance.now() - startedAt));
+        if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+        setLoadingMessage("Fashion disaster ready!");
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        overlay.classList.add("is-finished");
+        overlay.setAttribute("aria-hidden", "true");
+        setTimeout(() => overlay.remove(), 400);
+    }
+
     function resolveItemSrc(it) {
         if (it.src && it.src.startsWith("__builtin__/")) {
             const key = it.src.slice("__builtin__/".length);
@@ -3089,9 +3148,11 @@
     }
 
     async function init() {
+        const loadingStartedAt = performance.now();
         els.stage = $("canvas-stage");
         applyAppSettings();
         await loadManifest();
+        await preloadManifestImages();
         buildItemsPanel();
         bindTextStickerModal();
         bindLocalProjects();
@@ -3193,7 +3254,13 @@
         window.addEventListener("pagehide", () => {
             flushAutosave().catch(() => {});
         });
+
+        await finishLoadingOverlay(loadingStartedAt);
     }
 
-    init();
+    init().catch(() => {
+        setLoadingMessage("The socks escaped! Reload to try again.");
+        const dots = document.querySelector(".loading-dots");
+        if (dots) dots.hidden = true;
+    });
 })();
