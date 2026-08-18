@@ -5,7 +5,14 @@
     { "id": "people", "label": "People", "kind": "sticker", "folder": "assets/people/" },
     { "id": "outfits", "label": "Outfits", "kind": "sticker", "folder": "assets/outfits/" },
     { "id": "extras", "label": "Extras", "kind": "sticker", "folder": "assets/extras/" },
-    { "id": "backgrounds", "label": "Backgrounds", "kind": "background", "folder": "assets/backgrounds/" },
+    {
+      "id": "backgrounds",
+      "label": "Backgrounds",
+      "kind": "background",
+      "folder": "assets/backgrounds/",
+      "filenameTemplate": "{n}.jpg",
+      "alternateFilenameTemplates": ["{n}.png"]
+    },
     { "id": "paint", "label": "Doodle", "kind": "paint", "items": [] },
     { "id": "text", "label": "Words", "kind": "text", "items": [] }
   ]
