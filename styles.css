@@ -272,7 +272,8 @@ html, body {
     padding: 8px 12px;
 }
 
-.btn-gear {
+.btn-gear,
+.btn-gallery {
     font-size: 1.25rem;
 }
 
@@ -1371,6 +1372,21 @@ html, body {
 
 .modal-backdrop.hidden {
     display: none;
+}
+
+#settings-modal.gallery-only .settings-section:not(.settings-pictures-section),
+#settings-modal.gallery-only .hint {
+    display: none;
+}
+
+#settings-modal.gallery-only .modal {
+    width: min(540px, 100%);
+}
+
+#settings-modal.gallery-only .settings-pictures-section {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: 0;
 }
 
 .modal {

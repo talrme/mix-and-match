@@ -3231,6 +3231,20 @@
         }
     }
 
+    function openSettingsModal(mode) {
+        const modal = $("settings-modal");
+        const galleryOnly = mode === "gallery";
+        modal.classList.toggle("gallery-only", galleryOnly);
+        $("settings-title").textContent = galleryOnly ? "My Pictures" : "Settings";
+        modal.classList.remove("hidden");
+        setProjectStatus("");
+        refreshProjectGallery();
+    }
+
+    function closeSettingsModal() {
+        $("settings-modal").classList.add("hidden");
+    }
+
     async function init() {
         const loadingStartedAt = performance.now();
         els.stage = $("canvas-stage");
@@ -3293,16 +3307,11 @@
         );
         $("layer-delete").addEventListener("click", () => deleteSelectedLayer());
 
-        $("btn-settings").addEventListener("click", () => {
-            $("settings-modal").classList.remove("hidden");
-            setProjectStatus("");
-            refreshProjectGallery();
-        });
-        $("settings-close").addEventListener("click", () => {
-            $("settings-modal").classList.add("hidden");
-        });
+        $("btn-gallery").addEventListener("click", () => openSettingsModal("gallery"));
+        $("btn-settings").addEventListener("click", () => openSettingsModal("settings"));
+        $("settings-close").addEventListener("click", closeSettingsModal);
         $("settings-modal").addEventListener("click", (e) => {
-            if (e.target === $("settings-modal")) $("settings-modal").classList.add("hidden");
+            if (e.target === $("settings-modal")) closeSettingsModal();
         });
 
         $("setting-theme").addEventListener("change", (e) => {
